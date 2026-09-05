@@ -1,0 +1,357 @@
+// Elektr energiyasi analitik platformasi - ma'lumotlar bazasi sxemasi.
+//
+// Ierarxiya:
+//   ETK -> Podstansiya -> Transformator -> Fider (10 kV) -> TP -> Ko'rsatkichlar
+//
+// Ma'lumotlar Excel shablonlari orqali yuklanadi, har bir yuklash ImportBatch
+// bilan qayd etiladi.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Tarmoq ierarxiyasi
+// ---------------------------------------------------------------------------
+
+/// ETK - Elektr Ta'minoti Korxonasi (masalan "Chinobod ETK").
+model Etk {
+  id   String  @id @default(cuid())
+  name String  @unique
+  note String?
+
+  substations Substation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("etks")
+}
+
+/// Podstansiya (masalan 110/10 kV).
+model Substation {
+  id          String  @id @default(cuid())
+  etkId       String
+  name        String
+  /// Kuchlanish turi, masalan "110/10", "35/10".
+  voltageType String
+  address     String?
+  note        String?
+
+  etk          Etk           @relation(fields: [etkId], references: [id], onDelete: Cascade)
+  transformers Transformer[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([etkId, name])
+  @@index([etkId])
+  @@map("substations")
+}
+
+/// Podstansiyadagi kuch transformatori.
+model Transformer {
+  id           String  @id @default(cuid())
+  substationId String
+  name         String
+  capacityKva  Int
+  note         String?
+
+  substation Substation @relation(fields: [substationId], references: [id], onDelete: Cascade)
+  feeders    Feeder[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([substationId, name])
+  @@index([substationId])
+  @@map("transformers")
+}
+
+/// 10 kV fider (masalan "Xaqulobod").
+model Feeder {
+  id            String  @id @default(cuid())
+  transformerId String
+  name          String
+  /// Kuchlanish, kV.
+  voltage       Int     @default(10)
+  /// Hisoblagich koeffitsienti.
+  coefficient   Int     @default(1)
+  /// Shablonlarda uchraydigan muqobil nomlar (import moslashtirish uchun).
+  aliases       String[] @default([])
+  isActive      Boolean @default(true)
+  note          String?
+
+  transformer Transformer     @relation(fields: [transformerId], references: [id], onDelete: Cascade)
+  tpPoints    TpPoint[]
+  readings    FeederReading[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([transformerId, name])
+  @@index([transformerId])
+  @@map("feeders")
+}
+
+/// TP - Transformator punkti (shablonlarda raqam bilan: "10", "24", "179").
+model TpPoint {
+  id          String  @id @default(cuid())
+  feederId    String
+  /// Hujjatdagi TP raqami, matn sifatida saqlanadi ("07" kabi nollar yo'qolmasin).
+  tpNumber    String
+  address     String?
+  capacityKva Int?
+  coefficient Int     @default(1)
+  meterSerial String?
+  meterType   String?
+  isActive    Boolean @default(true)
+  note        String?
+
+  feeder   Feeder      @relation(fields: [feederId], references: [id], onDelete: Cascade)
+  readings TpReading[]
+  problems TpProblem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([feederId, tpNumber])
+  @@index([feederId])
+  @@map("tp_points")
+}
+
+// ---------------------------------------------------------------------------
+// Ko'rsatkichlar (hisoblagich o'qishlari)
+// ---------------------------------------------------------------------------
+
+/// TP balans hisoblagichi bo'yicha davr ko'rsatkichi.
+model TpReading {
+  id        String   @id @default(cuid())
+  tpPointId String
+  /// Hisobot davri boshi (kunlik hisobotda periodStart = periodEnd).
+  periodStart DateTime @db.Date
+  periodEnd   DateTime @db.Date
+
+  /// Hisoblagichning davr oxiridagi ko'rsatkichi.
+  meterValue    Decimal @db.Decimal(14, 2)
+  /// Oldingi davr ko'rsatkichi.
+  previousValue Decimal @default(0) @db.Decimal(14, 2)
+  /// meterValue - previousValue.
+  difference    Decimal @db.Decimal(14, 2)
+  coefficient   Int     @default(1)
+
+  /// Balans hisoblagichdan olingan energiya, kWh (shablonda "Hisoblangan").
+  suppliedKwh Decimal  @db.Decimal(16, 2)
+  /// Biriktirilgan iste'molchilar hisoblagichlari yig'indisi, kWh ("Foydali oqim").
+  usefulKwh   Decimal? @db.Decimal(16, 2)
+  /// Tarmoqdagi yo'qotish, kWh (suppliedKwh - usefulKwh).
+  lossKwh     Decimal? @db.Decimal(16, 2)
+  /// Yo'qotish foizi. Manfiy bo'lishi mumkin - shuning uchun keng diapazon.
+  lossPercent Decimal? @db.Decimal(9, 4)
+
+  /// Biriktirilgan iste'molchilar soni.
+  consumersTotal   Int?
+  /// Aloqada (onlayn) hisoblagichlar soni.
+  consumersOnline  Int?
+  /// Aloqadamas (oflayn) hisoblagichlar soni.
+  consumersOffline Int?
+
+  /// Ko'p tarifli hisoblagich zonalari.
+  zoneT1 Decimal? @db.Decimal(14, 2)
+  zoneT2 Decimal? @db.Decimal(14, 2)
+  zoneT3 Decimal? @db.Decimal(14, 2)
+  zoneT4 Decimal? @db.Decimal(14, 2)
+
+  /// Reaktiv energiya.
+  reactivePlus  Decimal? @db.Decimal(14, 2)
+  reactiveMinus Decimal? @db.Decimal(14, 2)
+
+  /// Boshlang'ich (tayanch) o'qish - farq hisoblanmaydi.
+  isBaseline Boolean @default(false)
+  note       String?
+
+  importBatchId String?
+
+  tpPoint     TpPoint      @relation(fields: [tpPointId], references: [id], onDelete: Cascade)
+  importBatch ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tpPointId, periodStart, periodEnd])
+  @@index([periodStart])
+  @@index([importBatchId])
+  @@map("tp_readings")
+}
+
+/// Fider darajasidagi davr ko'rsatkichi.
+model FeederReading {
+  id       String   @id @default(cuid())
+  feederId String
+  periodStart DateTime @db.Date
+  periodEnd   DateTime @db.Date
+
+  meterValue    Decimal @db.Decimal(14, 2)
+  previousValue Decimal @default(0) @db.Decimal(14, 2)
+  difference    Decimal @db.Decimal(14, 2)
+  coefficient   Int     @default(1)
+
+  /// Fiderdan chiqarilgan energiya, kWh.
+  suppliedKwh Decimal  @db.Decimal(16, 2)
+  /// TP'lar bo'yicha foydali oqim yig'indisi, kWh.
+  usefulKwh   Decimal? @db.Decimal(16, 2)
+  lossKwh     Decimal? @db.Decimal(16, 2)
+  lossPercent Decimal? @db.Decimal(9, 4)
+
+  /// Texnik yo'qotish (normativ bo'yicha hisoblanadi).
+  technicalLossKwh     Decimal? @db.Decimal(16, 2)
+  technicalLossPercent Decimal? @db.Decimal(5, 2)
+  /// Tijorat yo'qotishi = umumiy yo'qotish - texnik yo'qotish.
+  commercialLossKwh    Decimal? @db.Decimal(16, 2)
+
+  isBaseline Boolean @default(false)
+  note       String?
+
+  importBatchId String?
+
+  feeder      Feeder       @relation(fields: [feederId], references: [id], onDelete: Cascade)
+  importBatch ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([feederId, periodStart, periodEnd])
+  @@index([periodStart])
+  @@index([importBatchId])
+  @@map("feeder_readings")
+}
+
+/// TP bo'yicha aniqlangan muammo (shablondagi "Muammolar" varag'i).
+model TpProblem {
+  id          String        @id @default(cuid())
+  tpPointId   String
+  /// Muammo matni (hujjatdagi asl ifoda).
+  description String
+  severity    ProblemSeverity @default(MEDIUM)
+  status      ProblemStatus   @default(OPEN)
+  detectedAt  DateTime        @db.Date
+  resolvedAt  DateTime?       @db.Date
+
+  tpPoint TpPoint @relation(fields: [tpPointId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tpPointId])
+  @@index([status])
+  @@map("tp_problems")
+}
+
+// ---------------------------------------------------------------------------
+// Ma'lumot yuklash (Excel shablonlari)
+// ---------------------------------------------------------------------------
+
+/// Bitta fayl yuklash amali. Har bir yozuv qaysi yuklashdan kelganini biladi.
+model ImportBatch {
+  id           String         @id @default(cuid())
+  fileName     String
+  fileSize     Int
+  /// Shablon turi - qaysi parser ishlatilgani.
+  templateType ImportTemplate
+  status       ImportStatus   @default(PENDING)
+
+  /// Fayldan aniqlangan hisobot davri.
+  periodStart DateTime? @db.Date
+  periodEnd   DateTime? @db.Date
+
+  totalRows    Int @default(0)
+  insertedRows Int @default(0)
+  updatedRows  Int @default(0)
+  skippedRows  Int @default(0)
+  errorRows    Int @default(0)
+
+  /// Qator-qator xatoliklar ro'yxati: [{ row, column, message }].
+  errors Json?
+
+  uploadedById String?
+  uploadedBy   User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  tpReadings     TpReading[]
+  feederReadings FeederReading[]
+
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([templateType])
+  @@index([status])
+  @@index([createdAt])
+  @@map("import_batches")
+}
+
+// ---------------------------------------------------------------------------
+// Foydalanuvchilar
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  fullName     String
+  role         UserRole @default(VIEWER)
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+
+  imports ImportBatch[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Enum'lar
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+enum ImportTemplate {
+  /// Kunlik TP hisoboti (balans hisoblagich, foydali oqim, yo'qotish).
+  TP_DAILY
+  /// Oylik yoki 10-kunlik TP hisoboti (Dan/Gacha oralig'i).
+  TP_PERIOD
+  /// Fider bo'yicha hisobot.
+  FEEDER_PERIOD
+  /// Iste'molchilar ro'yxati (aloqada / aloqadamas).
+  CONSUMERS
+  /// TP muammolari ro'yxati.
+  PROBLEMS
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ProblemSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum ProblemStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
