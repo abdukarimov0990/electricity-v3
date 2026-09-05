@@ -50,6 +50,6 @@ skipped (no changes)
 - **Never** commit `.env*` files (only `.env.example` is tracked), `node_modules/`, `.next/`, `src/generated/`, or `.DS_Store`. If any of these show up in `git status`, leave them out and mention it in the report.
 - Do not `git add .` blindly - stage the specific files that belong to each logical commit.
 - If a push is rejected - ask the user before running `git pull --rebase`.
-- If the current branch is not `master` but a feature branch - just use the current branch name; do not switch branches.
+- If the current branch is not `main` but a feature branch - just use the current branch name; do not switch branches.
 - Use `git rev-parse --abbrev-ref HEAD` to get the current branch (this machine's git has no `git branch --show-current`).
 - Commit messages are **in English**, and the prefix (`feat:`, `fix:`, `refactor:`, `style:`, `docs:`, `chore:`) is also in English.
