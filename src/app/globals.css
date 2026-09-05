@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/* Tizim mavzusi - doim oq (light).
+   Tungi mavzu hozircha qo'shilmagan: qo'shilganda shu yerga `@custom-variant
+   dark` va `:root[data-theme="dark"]` bloki qo'shiladi, html'ga `data-theme`
+   qo'yiladi. Foydalanuvchi OS'da tungi rejimda bo'lsa ham sayt oq qoladi. */
+:root {
+  color-scheme: light;
+
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
