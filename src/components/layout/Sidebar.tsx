@@ -2,55 +2,44 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
 import {
-  BoltIcon,
-  DashboardIcon,
-  HomeIcon,
-  MapIcon,
-  SettingsIcon,
-  SparkleIcon,
-} from "@/components/map/icons";
+  Activity,
+  ClipboardList,
+  FileText,
+  House,
+  Map as MapIcon,
+  Settings,
+  Zap,
+} from "lucide-react";
 
 type NavItem = {
   key: string;
   label: string;
-  Icon: typeof HomeIcon;
-  href?: string;
+  Icon: typeof House;
+  href: string;
 };
 
+// BEAP bo'limlari. Faol holat joriy URL bo'yicha aniqlanadi.
 const NAV: NavItem[] = [
-  { key: "home", label: "Bosh sahifa", Icon: HomeIcon, href: "/" },
-  { key: "dashboard", label: "Boshqaruv", Icon: DashboardIcon },
-  { key: "energy", label: "Energiya", Icon: BoltIcon },
+  { key: "dashboard", label: "Fider paneli", Icon: House, href: "/" },
+  { key: "transformers", label: "Transformatorlar", Icon: Zap, href: "/transformers" },
+  { key: "balance", label: "Energiya balansi", Icon: Activity, href: "/energy-balance" },
+  { key: "works", label: "Rejalashtirilgan ishlar", Icon: ClipboardList, href: "/works" },
+  { key: "reports", label: "Hisobotlar", Icon: FileText, href: "/reports" },
   { key: "map", label: "Xarita", Icon: MapIcon, href: "/map" },
-  { key: "ai", label: "Tahlil", Icon: SparkleIcon },
 ];
 
 interface SidebarProps {
   /** Xarita sahifasida: xarita ikonasiga 2x-click oq panelni ochib/yopadi. */
   onMapDoubleClick?: () => void;
-  /** Home sahifasida: uy ikonasiga 2x-click "Bo'limlar" panelini ochib/yopadi. */
-  onHomeDoubleClick?: () => void;
 }
 
 /**
- * Umumiy qora navigatsiya (Figma "White" 72x1064, #2C2C2C, r16). Sahifalar
- * o'rtasida o'tish shu yerda: uy -> "/", xarita -> "/map". Faol holat joriy
- * URL bo'yicha aniqlanadi.
+ * Umumiy qora navigatsiya (72px, #2C2C2C, r16). Sahifalar o'rtasida o'tish shu
+ * yerda; faol bo'lim `usePathname` bilan belgilanadi.
  */
-export function Sidebar({
-  onMapDoubleClick,
-  onHomeDoubleClick,
-}: SidebarProps) {
+export function Sidebar({ onMapDoubleClick }: SidebarProps) {
   const pathname = usePathname();
-
-  const doubleClickFor = (key: string) =>
-    key === "map"
-      ? onMapDoubleClick
-      : key === "home"
-        ? onHomeDoubleClick
-        : undefined;
 
   const itemClass = (active: boolean) =>
     [
@@ -60,48 +49,30 @@ export function Sidebar({
 
   return (
     <nav className="flex h-full w-[72px] shrink-0 select-none flex-col items-center justify-between rounded-2xl border-2 border-[#DDDDDD] bg-[#2C2C2C] p-1.5">
-      <div className="flex flex-col items-center gap-3">
+      <div className="flex flex-col items-center gap-2.5">
         {NAV.map((item) => {
-          const active = item.href ? pathname === item.href : false;
-          const icon = (
-            <item.Icon className="h-7 w-7 text-white" strokeWidth={2} />
-          );
-
-          if (item.href) {
-            return (
-              <Link
-                key={item.key}
-                href={item.href}
-                title={
-                  doubleClickFor(item.key)
-                    ? `${item.label} (2x bosib panelni yoping)`
-                    : item.label
-                }
-                aria-label={item.label}
-                aria-current={active ? "page" : undefined}
-                onDoubleClick={doubleClickFor(item.key)}
-                className={itemClass(active)}
-              >
-                {icon}
-              </Link>
-            );
-          }
-
+          const active = pathname === item.href;
           return (
-            <button
+            <Link
               key={item.key}
-              type="button"
-              title={item.label}
+              href={item.href}
+              title={
+                item.key === "map"
+                  ? `${item.label} (2x bosib panelni yoping)`
+                  : item.label
+              }
               aria-label={item.label}
-              className={itemClass(false)}
+              aria-current={active ? "page" : undefined}
+              onDoubleClick={item.key === "map" ? onMapDoubleClick : undefined}
+              className={itemClass(active)}
             >
-              {icon}
-            </button>
+              <item.Icon className="h-[26px] w-[26px] text-white" strokeWidth={1.9} />
+            </Link>
           );
         })}
       </div>
 
-      <div className="flex flex-col items-center gap-3">
+      <div className="flex flex-col items-center gap-2.5">
         <button
           type="button"
           title="Profil"
@@ -121,7 +92,7 @@ export function Sidebar({
           aria-label="Sozlamalar"
           className="flex h-14 w-14 items-center justify-center rounded-lg transition-colors hover:bg-white/10"
         >
-          <SettingsIcon className="h-7 w-7 text-white" strokeWidth={2} />
+          <Settings className="h-[26px] w-[26px] text-white" strokeWidth={1.9} />
         </button>
       </div>
     </nav>
