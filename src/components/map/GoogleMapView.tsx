@@ -11,7 +11,14 @@ import { useEffect, useRef, useState } from "react";
 import { MapIcon } from "./icons";
 import type { MapLocation } from "./data";
 
-const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim();
+// Google Maps browser kaliti mijoz tomonda baribir ochiq bo'ladi. Env
+// (.env.local) bo'lmasa - shu committed kalit ishlatiladi, shunda clone/deploy
+// qilinganda xarita darhol ishlaydi. MUHIM: kalitni Google Cloud Console'da
+// HTTP referrer bilan cheklang (domeningizga), aks holda kvota o'g'irlanishi
+// mumkin.
+const API_KEY =
+  process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ||
+  "AIzaSyAeOW0FUrMrponDFkaguThJ5BlaXzxfCgY";
 // AdvancedMarkerElement uchun mapId shart. Google'ning ochiq demo ID'si.
 const MAP_ID = "DEMO_MAP_ID";
 
