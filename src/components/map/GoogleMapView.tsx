@@ -1,19 +1,45 @@
 "use client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// Markaziy xarita - HAQIQIY Google Maps JavaScript API (AdvancedMarkerElement).
-// Kalit faqat NEXT_PUBLIC_GOOGLE_MAPS_API_KEY dan. Joylashuv tanlanganda xarita
-// o'sha nuqtaga uchadi (panTo) va yaqinlashadi. Kalit yo'q/yaroqsiz bo'lsa -
-// toza ko'rsatma paneli.
+// Markaziy xarita - HAQIQIY Google Maps JavaScript API. Figma uslubi (ochiq
+// roadmap). Markerlar dinamik: `markers` to'plami o'zgarsa qayta chiziladi
+// (Fider darajasida - TP'lar, TP darajasida - Abonentlar). `center/zoom`
+// o'zgarsa xarita panTo bilan uchadi. Markerlar custom OverlayView (mapId'siz).
 
 import { useEffect, useRef, useState } from "react";
 
 import { MapIcon } from "./icons";
-import type { MapLocation } from "./data";
+
+export interface MapMarker {
+  id: string;
+  lat: number;
+  lng: number;
+  label: string;
+}
 
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim();
-// AdvancedMarkerElement uchun mapId shart. Google'ning ochiq demo ID'si.
-const MAP_ID = "DEMO_MAP_ID";
+
+const MAP_STYLE: any[] = [
+  { elementType: "geometry", stylers: [{ color: "#f4f2ed" }] },
+  { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#8f8f8f" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#ffffff" }, { weight: 3 }] },
+  { featureType: "administrative", elementType: "geometry", stylers: [{ visibility: "off" }] },
+  { featureType: "administrative.land_parcel", stylers: [{ visibility: "off" }] },
+  { featureType: "administrative.neighborhood", stylers: [{ visibility: "off" }] },
+  { featureType: "poi", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#e3e9d5" }, { visibility: "on" }] },
+  { featureType: "landscape.man_made", elementType: "geometry", stylers: [{ color: "#eeece6" }] },
+  { featureType: "road", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  { featureType: "road.local", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
+  { featureType: "road.arterial", elementType: "geometry.fill", stylers: [{ color: "#f7d979" }] },
+  { featureType: "road.arterial", elementType: "geometry.stroke", stylers: [{ color: "#ecc85e" }] },
+  { featureType: "road.highway", elementType: "geometry.fill", stylers: [{ color: "#f5cd5f" }] },
+  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#e6b94c" }] },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#c4dcef" }] },
+  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#9db6cc" }] },
+];
 
 let loaderPromise: Promise<void> | null = null;
 
@@ -29,7 +55,7 @@ function loadGoogleMaps(key: string): Promise<void> {
     const script = document.createElement("script");
     script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
       key,
-    )}&v=weekly&libraries=marker&loading=async&callback=${cbName}`;
+    )}&v=weekly&loading=async&callback=${cbName}`;
     script.async = true;
     script.onerror = () => reject(new Error("Google Maps yuklanmadi"));
     document.head.appendChild(script);
@@ -38,117 +64,151 @@ function loadGoogleMaps(key: string): Promise<void> {
   return loaderPromise;
 }
 
-// Marker tarkibi (HTML) - ko'k pin + ustida to'q yorliq (Figma marker).
-function markerContent(label: string, selected: boolean): HTMLElement {
+function markerHtml(label: string, selected: boolean): string {
   const w = selected ? 33 : 27;
   const h = Math.round((w * 41) / 27);
-  const el = document.createElement("div");
-  el.style.cssText =
-    "display:flex;flex-direction:column;align-items:center;cursor:pointer;";
-  el.innerHTML = `
-    <div style="position:relative;background:rgba(15,15,20,.88);color:#fff;font:500 11px/1 Inter,system-ui,sans-serif;padding:6px 10px;border-radius:8px;white-space:nowrap;margin-bottom:6px;">
-      ${label}
-      <div style="position:absolute;left:50%;bottom:-5px;transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:6px solid rgba(15,15,20,.88);"></div>
-    </div>
-    <svg width="${w}" height="${h}" viewBox="0 0 27 41" style="display:block;filter:drop-shadow(0 2px 2px rgba(0,0,0,.3));">
-      <path d="M13.5 0C6 0 0 6 0 13.4c0 9.9 12.1 26 12.6 26.6a1.1 1.1 0 0 0 1.8 0C14.9 39.4 27 23.3 27 13.4 27 6 21 0 13.5 0Z" fill="#42A5F5" stroke="#ffffff" stroke-width="1.5"/>
-      <circle cx="13.5" cy="13.5" r="5" fill="#ffffff"/>
-    </svg>`;
-  return el;
+  return `
+    <div style="display:flex;flex-direction:column;align-items:center;pointer-events:auto;">
+      <div style="position:relative;background:${selected ? "#007CD2" : "rgba(15,15,20,.88)"};color:#fff;font:600 11px/1 Inter,system-ui,sans-serif;padding:6px 10px;border-radius:8px;white-space:nowrap;margin-bottom:6px;">
+        ${label}
+        <div style="position:absolute;left:50%;bottom:-5px;transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:6px solid ${selected ? "#007CD2" : "rgba(15,15,20,.88)"};"></div>
+      </div>
+      <svg width="${w}" height="${h}" viewBox="0 0 27 41" style="display:block;filter:drop-shadow(0 2px 2px rgba(0,0,0,.3));">
+        <path d="M13.5 0C6 0 0 6 0 13.4c0 9.9 12.1 26 12.6 26.6a1.1 1.1 0 0 0 1.8 0C14.9 39.4 27 23.3 27 13.4 27 6 21 0 13.5 0Z" fill="${selected ? "#007CD2" : "#42A5F5"}" stroke="#ffffff" stroke-width="1.5"/>
+        <circle cx="13.5" cy="13.5" r="5" fill="#ffffff"/>
+      </svg>
+    </div>`;
 }
 
 interface GoogleMapViewProps {
-  locations: MapLocation[];
-  selectedId: string;
+  markers: MapMarker[];
+  selectedId: string | null;
+  center: { lat: number; lng: number };
+  zoom: number;
   onSelect: (id: string) => void;
   className?: string;
 }
 
 export function GoogleMapView({
-  locations,
+  markers,
   selectedId,
+  center,
+  zoom,
   onSelect,
   className,
 }: GoogleMapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
-  const markersRef = useRef<Record<string, any>>({});
-  const readyRef = useRef(false);
+  const overlaysRef = useRef<Record<string, { overlay: any; el: HTMLElement }>>({});
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">(
     API_KEY ? "loading" : "idle",
   );
+
+  const markersKey = markers.map((m) => m.id).join(",");
 
   useEffect(() => {
     if (!API_KEY) return;
     (window as any).gm_authFailure = () => setStatus("error");
   }, []);
 
+  // Xaritani bir marta yaratish.
   useEffect(() => {
     if (!API_KEY) return;
     let cancelled = false;
-
     loadGoogleMaps(API_KEY)
-      .then(async () => {
+      .then(() => {
         if (cancelled || !containerRef.current) return;
         const g = (window as any).google;
-        const { AdvancedMarkerElement } = await g.maps.importLibrary("marker");
-        if (cancelled) return;
-
-        const start =
-          locations.find((l) => l.id === selectedId) ?? locations[0];
-
-        const map = new g.maps.Map(containerRef.current, {
-          center: { lat: start.lat, lng: start.lng },
-          zoom: start.zoom,
-          mapId: MAP_ID,
+        mapRef.current = new g.maps.Map(containerRef.current, {
+          center,
+          zoom,
           disableDefaultUI: true,
           clickableIcons: false,
+          styles: MAP_STYLE,
+          backgroundColor: "#f4f2ed",
         });
-        mapRef.current = map;
-
-        locations.forEach((loc) => {
-          const marker = new AdvancedMarkerElement({
-            map,
-            position: { lat: loc.lat, lng: loc.lng },
-            title: loc.label,
-            content: markerContent(loc.label, loc.id === selectedId),
-            zIndex: loc.id === selectedId ? 999 : 1,
-            gmpClickable: true,
-          });
-          marker.addListener("click", () => onSelect(loc.id));
-          markersRef.current[loc.id] = marker;
-        });
-
-        readyRef.current = true;
         setStatus("ready");
       })
       .catch(() => {
         if (!cancelled) setStatus("error");
       });
-
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Marker to'plami o'zgarsa - qayta chizish.
   useEffect(() => {
-    if (!readyRef.current) return;
+    if (status !== "ready") return;
+    const g = (window as any).google;
     const map = mapRef.current;
-    const loc = locations.find((l) => l.id === selectedId);
-    if (!map || !loc) return;
+    if (!g || !map) return;
 
-    map.panTo({ lat: loc.lat, lng: loc.lng });
-    map.setZoom(loc.zoom);
+    // Eski overlaylarni tozalash.
+    Object.values(overlaysRef.current).forEach(({ overlay }) => overlay.setMap(null));
+    overlaysRef.current = {};
 
-    Object.entries(markersRef.current).forEach(([id, marker]: [string, any]) => {
-      const target = locations.find((l) => l.id === id);
-      if (!target) return;
-      marker.content = markerContent(target.label, id === selectedId);
-      marker.zIndex = id === selectedId ? 999 : 1;
+    class HtmlMarker extends g.maps.OverlayView {
+      position: any;
+      el: HTMLElement;
+      constructor(position: any, el: HTMLElement) {
+        super();
+        this.position = position;
+        this.el = el;
+      }
+      onAdd() {
+        this.getPanes().overlayMouseTarget.appendChild(this.el);
+      }
+      draw() {
+        const p = this.getProjection()?.fromLatLngToDivPixel(this.position);
+        if (p) {
+          this.el.style.left = `${p.x}px`;
+          this.el.style.top = `${p.y}px`;
+        }
+      }
+      onRemove() {
+        this.el.remove();
+      }
+    }
+
+    markers.forEach((m) => {
+      const el = document.createElement("div");
+      el.style.position = "absolute";
+      el.style.transform = "translate(-50%, -100%)";
+      el.style.cursor = "pointer";
+      el.style.zIndex = m.id === selectedId ? "999" : "1";
+      el.innerHTML = markerHtml(m.label, m.id === selectedId);
+      el.addEventListener("click", () => onSelectRef.current(m.id));
+      const overlay = new HtmlMarker(new g.maps.LatLng(m.lat, m.lng), el);
+      overlay.setMap(map);
+      overlaysRef.current[m.id] = { overlay, el };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId]);
+  }, [status, markersKey]);
+
+  // Tanlov o'zgarsa - highlight yangilash.
+  useEffect(() => {
+    if (status !== "ready") return;
+    Object.entries(overlaysRef.current).forEach(([id, { el }]) => {
+      const m = markers.find((x) => x.id === id);
+      if (!m) return;
+      el.style.zIndex = id === selectedId ? "999" : "1";
+      el.innerHTML = markerHtml(m.label, id === selectedId);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, selectedId]);
+
+  // Markaz/zoom o'zgarsa - uchib borish.
+  useEffect(() => {
+    if (status !== "ready" || !mapRef.current) return;
+    mapRef.current.panTo(center);
+    mapRef.current.setZoom(zoom);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, center.lat, center.lng, zoom]);
 
   if (!API_KEY || status === "error") {
     return (
@@ -186,7 +246,7 @@ export function GoogleMapView({
   return (
     <div
       className={[
-        "relative overflow-hidden rounded-2xl border-2 border-[#DDDDDD] bg-[#EDECE6]",
+        "relative overflow-hidden rounded-2xl border-2 border-[#DDDDDD] bg-[#f4f2ed]",
         className ?? "",
       ].join(" ")}
     >

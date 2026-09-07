@@ -36,14 +36,47 @@ export interface StationData {
   topConsumers: TopConsumer[];
 }
 
-export interface MapLocation {
+// --- Ierarxiya: Fider -> TP -> Abonent --------------------------------------
+
+export interface Abonent {
   id: string;
-  kind: LocationKind;
+  name: string;
+  avatar: string;
+  kind: "Yuridik" | "Jismoniy";
+  status: "Aloqada" | "Aloqadamas";
+  meter: string;
+  address: string;
+  phone: string;
+  tariff: string;
+  balance: string;
+  balancePositive: boolean;
+  monthly: string;
+  monthlyDelta: string;
+  monthlyUp: boolean;
+  consumption: number[]; // oxirgi 12 oy, kWh
+  payments: { date: string; amount: string }[];
+  lat: number;
+  lng: number;
+}
+
+export interface Tp {
+  id: string;
   label: string;
   lat: number;
   lng: number;
   zoom: number;
   data: StationData;
+  abonents: Abonent[];
+}
+
+export interface Feeder {
+  id: string;
+  label: string;
+  lat: number;
+  lng: number;
+  zoom: number;
+  data: StationData;
+  tps: Tp[];
 }
 
 // --- Ranglar (Figma'dan) ------------------------------------------------------
@@ -110,113 +143,154 @@ function makeStation(
   };
 }
 
-// Chinobod / Kiyali hududi (Farg'ona vodiysi) - taxminiy koordinatalar.
-export const locations: MapLocation[] = [
+// --- Abonent generatori (deterministik) -------------------------------------
+
+// Jinsga qarab ism va demo foto.
+const FEMALE: [string, string][] = [
+  ["Dilnoza", "Rahimova"], ["Nodira", "Saidova"], ["Feruza", "Ergasheva"],
+  ["Gulnora", "Yusupova"], ["Ozoda", "Qodirova"], ["Malika", "Islomova"],
+];
+const MALE: [string, string][] = [
+  ["Alisher", "Karimov"], ["Bobur", "Toshmatov"], ["Sardor", "Aliyev"],
+  ["Jasur", "Umarov"], ["Otabek", "Nazarov"], ["Aziz", "Xolmatov"],
+];
+const FEMALE_PHOTO = "/map/abonent-female.jpg";
+const MALE_PHOTO = "/map/abonent-male.jpg";
+const STREETS = ["Navoiy", "Amir Temur", "Mustaqillik", "Bobur", "Chinobod"];
+const OFF: [number, number][] = [
+  [0.0009, 0.0011], [-0.0011, 0.0007], [0.0007, -0.0012],
+];
+
+const money = (n: number) => `${th(Math.abs(n))} so'm`;
+const shortName = (s: string) => (s.length > 15 ? `${s.slice(0, 14)}…` : s);
+
+function makeAbonents(
+  tpId: string,
+  tpLat: number,
+  tpLng: number,
+  count: number,
+  seed: number,
+): Abonent[] {
+  return Array.from({ length: count }, (_, i) => {
+    const g = seed * 5 + i * 3;
+    const female = (seed + i) % 2 === 1;
+    // Bir TP ichida bir xil jinsli abonentlar (i=0,2) turli ismga ega bo'lsin.
+    const [fn, ln] = (female ? FEMALE : MALE)[(seed * 2 + i) % 6]!;
+    const base = 200 + (g % 6) * 22;
+    const amp = 45 + (g % 4) * 12;
+    const consumption = Array.from({ length: 12 }, (_, m) =>
+      Math.round(
+        base + amp * Math.sin(m * 0.7 + g) + amp * 0.4 * Math.sin(m * 1.9 + g),
+      ),
+    );
+    const monthly = consumption[11]!;
+    const prev = consumption[10]!;
+    const deltaPct = (((monthly - prev) / prev) * 100)
+      .toFixed(1)
+      .replace("-", "")
+      .replace(".", ",");
+    const bal = ((g % 5) - 2) * 32400;
+    const off = OFF[i % OFF.length]!;
+    return {
+      id: `${tpId}-ab${i + 1}`,
+      name: `${fn} ${ln}`,
+      avatar: female ? FEMALE_PHOTO : MALE_PHOTO,
+      kind: "Jismoniy",
+      status: (seed * 3 + i) % 5 === 0 ? "Aloqadamas" : "Aloqada",
+      meter: `UZ${10402000 + g * 137}`,
+      address: `${STREETS[g % STREETS.length]} ko'chasi ${1 + ((g * 7) % 80)}-uy`,
+      phone: `+998 9${(g % 8) + 1} ${100 + ((g * 13) % 899)}-${10 + ((g * 7) % 89)}-${10 + ((g * 3) % 89)}`,
+      tariff: "450 so'm/kWh",
+      balance: `${bal >= 0 ? "+" : "−"}${money(bal)}`,
+      balancePositive: bal >= 0,
+      monthly: `${th(monthly)} kWh`,
+      monthlyDelta: `${monthly >= prev ? "↑" : "↓"} ${deltaPct}%`,
+      monthlyUp: monthly >= prev,
+      consumption,
+      payments: [
+        { date: "iyul, 2026", amount: money(140_000 + (g % 5) * 8000) },
+        { date: "iyun, 2026", amount: money(128_000 + (g % 4) * 7000) },
+        { date: "may, 2026", amount: money(132_000 + (g % 3) * 6000) },
+      ],
+      lat: tpLat + off[0],
+      lng: tpLng + off[1],
+    };
+  });
+}
+
+// TP ma'lumoti - StationData, lekin TP miqyosidagi statistikalar bilan.
+function makeTpData(
+  idx: number,
+  title: string,
+  abonents: Abonent[],
+): StationData {
+  const d = makeStation(idx, title, []);
+  // TP rasmi feeder'dan farqlanadi (asosiy rasm - taqsimlash transformatori).
+  d.gallery = [
+    "/map/tp.jpg",
+    "/map/station-2.png",
+    "/map/station-4.png",
+    "/map/station-3.png",
+  ];
+  d.stats = [
+    { label: "Fiderlar", value: "1 ta", icon: "feeder" },
+    { label: "Transformatorlar", value: "1 ta", icon: "circuit" },
+    { label: "Abonentlar", value: `${abonents.length} ta`, icon: "users" },
+    {
+      label: "Qoidabuzarliklar",
+      value: `${abonents.filter((a) => a.status === "Aloqadamas").length} ta`,
+      icon: "hand",
+      danger: true,
+    },
+  ];
+  d.topConsumers = [...abonents]
+    .sort((a, b) => b.consumption[11]! - a.consumption[11]!)
+    .slice(0, 3)
+    .map((a, i) => ({
+      id: `${title}-c${i}`,
+      label: shortName(a.name),
+      value: `${th(a.consumption[11]!)} kWh`,
+    }));
+  return d;
+}
+
+// Chinobod (Baliqchi tumani, Andijon viloyati) hududi.
+const FEEDER0_TPS: [string, string, number, number, number, number][] = [
+  ["tp-a303", "TP A303", 40.8846, 71.9701, 16, 3],
+  ["tp-a31", "TP A31", 40.8827, 71.9884, 16, 3],
+  ["tp-a03", "TP A03", 40.8806, 71.9955, 16, 3],
+  ["tp-a321", "TP A321", 40.8757, 71.9726, 16, 3],
+  ["tp-a32-1", "TP A32", 40.8734, 71.9866, 16, 3],
+  ["tp-a32-2", "TP A32", 40.8712, 71.9664, 16, 3],
+  ["tp-a32-3", "TP A32", 40.869, 71.9906, 16, 3],
+];
+
+export const feeders: Feeder[] = [
   {
     id: "f-xaqulobod",
-    kind: "feeder",
     label: "Xaqulobod fider",
-    lat: 40.9515,
-    lng: 71.715,
+    lat: 40.8789,
+    lng: 71.9792,
     zoom: 14,
     data: makeStation(0, "A374 - 3B Podstansiyasi", [
       ["TP A303", 3021],
       ["TP B86", 1502],
       ["TP 43", 302],
     ]),
-  },
-  {
-    id: "tp-a303",
-    kind: "tp",
-    label: "TP A303",
-    lat: 40.9605,
-    lng: 71.706,
-    zoom: 16,
-    data: makeStation(1, "TP A303 punkti", [
-      ["TP A303", 2890],
-      ["TP A19", 1204],
-      ["TP 12", 268],
-    ]),
-  },
-  {
-    id: "tp-a31",
-    kind: "tp",
-    label: "TP A31",
-    lat: 40.9578,
-    lng: 71.723,
-    zoom: 16,
-    data: makeStation(2, "TP A31 punkti", [
-      ["TP A31", 2610],
-      ["TP C40", 1130],
-      ["TP 8", 244],
-    ]),
-  },
-  {
-    id: "tp-a03",
-    kind: "tp",
-    label: "TP A03",
-    lat: 40.9562,
-    lng: 71.735,
-    zoom: 16,
-    data: makeStation(3, "TP A03 punkti", [
-      ["TP A03", 2350],
-      ["TP D21", 980],
-      ["TP 5", 190],
-    ]),
-  },
-  {
-    id: "tp-a321",
-    kind: "tp",
-    label: "TP A321",
-    lat: 40.9524,
-    lng: 71.7108,
-    zoom: 16,
-    data: makeStation(4, "TP A321 punkti", [
-      ["TP A321", 2140],
-      ["TP B15", 870],
-      ["TP 3", 156],
-    ]),
-  },
-  {
-    id: "tp-a32-1",
-    kind: "tp",
-    label: "TP A32",
-    lat: 40.9496,
-    lng: 71.7285,
-    zoom: 16,
-    data: makeStation(5, "TP A32 punkti", [
-      ["TP A32", 1980],
-      ["TP A7", 760],
-      ["TP 2", 132],
-    ]),
-  },
-  {
-    id: "tp-a32-2",
-    kind: "tp",
-    label: "TP A32",
-    lat: 40.9472,
-    lng: 71.6975,
-    zoom: 16,
-    data: makeStation(6, "TP A32 punkti", [
-      ["TP A32", 1760],
-      ["TP A9", 690],
-      ["TP 1", 110],
-    ]),
-  },
-  {
-    id: "tp-a32-3",
-    kind: "tp",
-    label: "TP A32",
-    lat: 40.9448,
-    lng: 71.7325,
-    zoom: 16,
-    data: makeStation(7, "TP A32 punkti", [
-      ["TP A32", 1540],
-      ["TP A2", 610],
-      ["TP 6", 96],
-    ]),
+    tps: FEEDER0_TPS.map(([id, label, lat, lng, zoom, count], idx) => {
+      const abonents = makeAbonents(id, lat, lng, count, idx + 1);
+      return {
+        id,
+        label,
+        lat,
+        lng,
+        zoom,
+        data: makeTpData(idx + 1, `${label} punkti`, abonents),
+        abonents,
+      };
+    }),
   },
 ];
 
-export const mapCenter = { lat: locations[0]!.lat, lng: locations[0]!.lng };
-export const mapZoom = locations[0]!.zoom;
+export const mapCenter = { lat: feeders[0]!.lat, lng: feeders[0]!.lng };
+export const mapZoom = feeders[0]!.zoom;

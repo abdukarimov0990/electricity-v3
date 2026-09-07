@@ -20,7 +20,7 @@ export function DashboardShell({
   children,
 }: DashboardShellProps) {
   return (
-    <div className="flex h-screen w-full gap-2.5 overflow-hidden bg-[#F7F8FA] p-2.5">
+    <div className="flex h-screen w-full gap-2 overflow-hidden bg-[#F7F8FA] p-2">
       <Sidebar />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
