@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 
-import { DashboardView } from "@/components/dashboard/DashboardView";
+import { HomeView } from "@/components/home/HomeView";
 
 export const metadata: Metadata = {
-  title: "Fider paneli",
+  title: "Asosiy",
 };
 
-export default function DashboardPage() {
-  return <DashboardView />;
+export default function HomePage() {
+  return <HomeView />;
 }
