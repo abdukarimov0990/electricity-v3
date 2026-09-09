@@ -59,20 +59,57 @@ export function Card({
   );
 }
 
-function ChartTools() {
+type View = "chart" | "table";
+
+function ChartTools({ view, setView }: { view: View; setView: (v: View) => void }) {
+  const pill = (on: boolean) =>
+    [
+      "flex h-7 w-7 items-center justify-center rounded-full transition-colors",
+      on ? "bg-[#007CD2] text-white" : "text-[#8A9099] hover:text-[#333333]",
+    ].join(" ");
   return (
     <div className="flex items-center gap-2">
       <div className="flex items-center gap-0.5 rounded-full bg-[#F3F3F3] p-0.5">
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#007CD2] text-white">
+        <button type="button" aria-label="Grafik" onClick={() => setView("chart")} className={pill(view === "chart")}>
           <ChartColumnBig className="h-4 w-4" />
-        </span>
-        <span className="flex h-7 w-7 items-center justify-center rounded-full text-[#8A9099]">
+        </button>
+        <button type="button" aria-label="Jadval" onClick={() => setView("table")} className={pill(view === "table")}>
           <Table2 className="h-4 w-4" />
-        </span>
+        </button>
       </div>
-      <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E9EBEE] text-[#8A9099] hover:bg-[#F3F3F3]">
+      <button type="button" aria-label="Yuklab olish" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E9EBEE] text-[#8A9099] hover:bg-[#F3F3F3]">
         <Download className="h-4 w-4" />
       </button>
+    </div>
+  );
+}
+
+// Kichik jadval (ko'rsatkich | qiymat) - chart o'rniga.
+function MiniTable({ head, rows }: { head: string[]; rows: (string | React.ReactNode)[][] }) {
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
+      <table className="w-full text-[12px]">
+        <thead className="sticky top-0 bg-white text-[#8A9099]">
+          <tr>
+            {head.map((h, i) => (
+              <th key={i} className={`pb-2 font-medium ${i === 0 ? "text-left" : "text-right"}`}>
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} className="border-t border-[#F2F3F5]">
+              {r.map((c, j) => (
+                <td key={j} className={`py-2 ${j === 0 ? "text-left font-semibold text-[#333333]" : "text-right text-[#555555]"}`}>
+                  {c}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -87,25 +124,45 @@ function IconBtn() {
 
 // --- Iste'mol dinamikasi -----------------------------------------------------
 export function IstemolCard() {
+  const [view, setView] = useState<View>("chart");
+  const last = consumption.hisoblangan.length - 7;
+  const rows = Array.from({ length: 7 }, (_, i) => {
+    const k = last + i;
+    return [
+      `${i + 1}-kun`,
+      `${Math.round(consumption.hisoblangan[k]!)}`,
+      `${Math.round(consumption.istemol[k]!)}`,
+      `${Math.round(consumption.yoqotish[k]!)}`,
+    ];
+  });
+
   return (
-    <Card title="Iste'mol dinamikasi" actions={<ChartTools />} className="flex h-full flex-col">
-      <div className="flex flex-1 gap-3">
-        <div className="flex min-w-0 flex-1 flex-col justify-between">
-          <div className="min-h-0 flex-1">
-            <LineChart
-              lines={[
-                { data: consumption.hisoblangan, color: "#3B82F6" },
-                { data: consumption.istemol, color: "#22C55E" },
-                { data: consumption.yoqotish, color: "#EF4444" },
-              ]}
-            />
+    <Card
+      title="Iste'mol dinamikasi"
+      actions={<ChartTools view={view} setView={setView} />}
+      className="flex h-full flex-col"
+    >
+      {view === "chart" ? (
+        <div className="flex flex-1 gap-3">
+          <div className="flex min-w-0 flex-1 flex-col justify-between">
+            <div className="min-h-0 flex-1">
+              <LineChart
+                lines={[
+                  { data: consumption.hisoblangan, color: "#3B82F6" },
+                  { data: consumption.istemol, color: "#22C55E" },
+                  { data: consumption.yoqotish, color: "#EF4444" },
+                ]}
+              />
+            </div>
+            <span className="mt-1 self-start rounded-full bg-[#F3F3F3] px-3 py-1 text-[12px] font-medium text-[#6B7178]">
+              7 kun
+            </span>
           </div>
-          <span className="mt-1 self-start rounded-full bg-[#F3F3F3] px-3 py-1 text-[12px] font-medium text-[#6B7178]">
-            7 kun
-          </span>
+          <Legend items={consumption.legend} className="w-[132px] shrink-0 justify-center" />
         </div>
-        <Legend items={consumption.legend} className="w-[132px] shrink-0 justify-center" />
-      </div>
+      ) : (
+        <MiniTable head={["Kun", "Hisoblangan", "Iste'mol", "Yo'qotish"]} rows={rows} />
+      )}
     </Card>
   );
 }
@@ -162,32 +219,63 @@ const T_STATUS: Record<TStatus, string> = {
   "Ta'mirda": "text-[#E08A0B]",
 };
 
+const T_BAR: Record<TStatus, string> = {
+  Faol: "#22C55E",
+  Nofaol: "#EF4444",
+  "Ta'mirda": "#F59E0B",
+};
+
 export function TopTransformersCard() {
+  const [view, setView] = useState<View>("table");
+  const num = (s: string) => parseFloat(s.replace(",", "."));
+  const max = Math.max(...topTransformers.map((t) => num(t.calc)));
+
   return (
-    <Card title="Eng ko'p sarfga ega transformatorlar" actions={<ChartTools />} className="flex h-full flex-col">
-      <div className="flex-1 overflow-hidden">
-        <table className="w-full text-[12px]">
-          <thead>
-            <tr className="text-[#8A9099]">
-              <th className="pb-2 text-left font-medium">Nomi</th>
-              <th className="pb-2 text-left font-medium">Holat</th>
-              <th className="pb-2 text-right font-medium">Hisoblangan</th>
-              <th className="pb-2 text-right font-medium">Iste&apos;mol</th>
-              <th className="pb-2 text-right font-medium">Yo&apos;qotish</th>
-            </tr>
-          </thead>
-          <tbody>
-            {topTransformers.map((r, i) => (
-              <tr key={i} className="border-t border-[#F2F3F5]">
-                <td className="py-2 font-semibold text-[#007CD2]">{r.name}</td>
-                <td className={`py-2 font-medium ${T_STATUS[r.status]}`}>{r.status}</td>
-                <td className="py-2 text-right text-[#333333]">{r.calc}</td>
-                <td className="py-2 text-right text-[#333333]">{r.use}</td>
-                <td className="py-2 text-right text-[#333333]">{r.loss}</td>
+    <Card
+      title="Eng ko'p sarfga ega transformatorlar"
+      actions={<ChartTools view={view} setView={setView} />}
+      className="flex h-full flex-col"
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
+        {view === "table" ? (
+          <table className="w-full text-[12px]">
+            <thead className="text-[#8A9099]">
+              <tr>
+                <th className="pb-2 text-left font-medium">Nomi</th>
+                <th className="pb-2 text-left font-medium">Holat</th>
+                <th className="pb-2 text-right font-medium">Hisoblangan</th>
+                <th className="pb-2 text-right font-medium">Iste&apos;mol</th>
+                <th className="pb-2 text-right font-medium">Yo&apos;qotish</th>
               </tr>
+            </thead>
+            <tbody>
+              {topTransformers.map((r, i) => (
+                <tr key={i} className="border-t border-[#F2F3F5]">
+                  <td className="py-2 font-semibold text-[#007CD2]">{r.name}</td>
+                  <td className={`py-2 font-medium ${T_STATUS[r.status]}`}>{r.status}</td>
+                  <td className="py-2 text-right text-[#333333]">{r.calc}</td>
+                  <td className="py-2 text-right text-[#333333]">{r.use}</td>
+                  <td className="py-2 text-right text-[#333333]">{r.loss}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div className="flex flex-col gap-2.5 pt-1">
+            {topTransformers.map((r, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="w-12 shrink-0 text-[12px] font-semibold text-[#007CD2]">{r.name}</span>
+                <div className="h-4 flex-1 overflow-hidden rounded-full bg-[#F3F3F3]">
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${(num(r.calc) / max) * 100}%`, backgroundColor: T_BAR[r.status] }}
+                  />
+                </div>
+                <span className="w-16 shrink-0 text-right text-[12px] text-[#555555]">{r.calc}</span>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        )}
       </div>
       <a className="mt-1 text-center text-[13px] font-semibold text-[#007CD2]">Batafsil</a>
     </Card>
@@ -196,12 +284,33 @@ export function TopTransformersCard() {
 
 // --- Radial (Qarzdorlik / Yo'qotish zarari) ---------------------------------
 export function RadialCard({ data }: { data: typeof debt | typeof lossShare }) {
+  const [view, setView] = useState<View>("chart");
   return (
-    <Card title={data.title} actions={<ChartTools />} className="flex h-full flex-col">
-      <div className="flex flex-1 items-center justify-center">
-        <RadialChart segments={data.segments} size={150} />
-      </div>
-      <Legend items={data.segments} className="mt-1 !flex-row flex-wrap justify-between gap-x-2" />
+    <Card
+      title={data.title}
+      actions={<ChartTools view={view} setView={setView} />}
+      className="flex h-full flex-col"
+    >
+      {view === "chart" ? (
+        <>
+          <div className="flex flex-1 items-center justify-center">
+            <RadialChart segments={data.segments} size={150} />
+          </div>
+          <Legend items={data.segments} className="mt-1 !flex-row flex-wrap justify-between gap-x-2" />
+        </>
+      ) : (
+        <MiniTable
+          head={["Modda", "Qiymat", "Ulush"]}
+          rows={data.segments.map((s) => [
+            <span key="l" className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+              {s.label}
+            </span>,
+            s.value,
+            `${s.pct}%`,
+          ])}
+        />
+      )}
     </Card>
   );
 }
